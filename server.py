@@ -1,24 +1,46 @@
 import socket
+import cv2 as cv 
+import numpy as np 
+import struct
+import time
 
-MPTCP_ENABLED = 42
+class VideoServer:
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# when net.mptcp.mptcp_enabled = 2, both client and server should enable MPTCP socket option for using MPTCP
+    def __init__(self, addr=("", 8000)):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addr = addr
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(addr)
+        self.sock.listen(2)
+        self.source = "test2.mp4"
+        while True:
+            sc, addr = self.sock.accept()
+            self.handle(sc)
+    
+    def handle(self, sock):
+        # Start video capture
+        cap = cv.VideoCapture(self.source)
+        print()
+        i = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("finished stream")
+                length = struct.pack('!I', 0)
+                sock.sendall(length)
+                return
+            frame = cv.resize(frame, (640, 480))
+            frame = np.array(frame, dtype=np.uint8).reshape(1, -1)
+            databytes = bytearray(frame)
+            length = struct.pack('!I', len(databytes))
+            try:
+                sock.sendall(length)
+                sock.sendall(databytes)
+            except Exception as e:
+                print(e)
+                return
+            i += 1
+            print(f'Sent frame {i}', end='\r')
 
-# Enable MPTCP
-sock.setsockopt(socket.SOL_TCP, MPTCP_ENABLED, 1)
-
-# MPTCP not working on localhost for some reason?
-sock.bind(('192.168.0.108', 8000))
-sock.listen(1)
-
-while True:
-    sc, address = sock.accept()
-    print('Client', address)
-    # if 1, implies connection is MPTCP
-    print(sc.getsockopt(socket.SOL_TCP, MPTCP_ENABLED))
-    print(sc.recv(65535).decode('ascii'))
-    print(sc.recv(65535).decode('ascii'))
-    print(sc.recv(65535).decode('ascii'))
-    sc.close()
+if __name__ == "__main__":
+    vs = VideoServer()
