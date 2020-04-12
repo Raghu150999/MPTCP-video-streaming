@@ -19,6 +19,7 @@ class Util:
                     raise Exception('peer closed')
                 data += new_data
             except socket.timeout as e:
+                # TODO: handle several timeouts (probably lost connection)
                 pass
             rem = length - len(data)
         return data
@@ -30,6 +31,8 @@ class Util:
         return data
     
     def send(self, data):
+        if type(data) == str:
+            data = data.encode('ascii')
         l = len(data)
         l = struct.pack('!I', l)
         databytes = l

@@ -7,6 +7,7 @@ import threading
 from util import Util
 from video_stream import VideoStream
 from constants import *
+import argparse
 
 class VideoServer:
 
@@ -48,6 +49,12 @@ class ClientHandler(threading.Thread):
         self.handle()
 
     def terminate(self):
+        # try to send EXIT cmd
+        try:
+            self.cutil.send(EXIT)
+        except:
+            # error if client closed
+            pass
         self.sock.close()
         # if stream is live, quit stream
         if self.streaming:
@@ -58,18 +65,19 @@ class ClientHandler(threading.Thread):
     
     # control socket
     def handle(self):
-        sock = self.sock
-        util = Util(sock)
-        self.util = util
+        util = Util(self.sock)
+        self.cutil = util
 
         # get video filename
+        # TODO: handle unknow filename
         filename = util.recv().decode('ascii')
 
         cmd = util.recv().decode('ascii')
         if cmd != SETUP:
-            util.send(EXIT.encode('ascii'))
             self.terminate()
             return
+
+        util.send(OK)
 
         # Start video capture
         self.vs = VideoStream(filename)
@@ -79,36 +87,32 @@ class ClientHandler(threading.Thread):
             if cmd == EXIT:
                 self.terminate()
                 return
-            elif cmd == PP and not self.streaming:
+            elif cmd == PLAY:
                 self.streamer = threading.Thread(target=self.start_streaming, args=())
                 self.streamer.start()
-            elif cmd == PP and self.streaming:
-                self.streaming = False
-                self.streamer.join()
             elif cmd == HEARTBEAT:
+                # TODO: handle if no HEARTBEAT received for long
                 pass
             if self.completed:
-                util.send(EXIT.encode('ascii'))
                 self.terminate()
                 return
     
     # data socket
     def start_streaming(self):
         self.streaming = True
-        util = Util(self.data_sock)
+        print('Started streaming...', self.addr)
         while self.streaming:
-            frame = self.vs.read_frame()
-            if frame == None:
-                print("Finished streaming...")
+            data = self.vs.read()
+            if data == None:
+                print("Finished streaming...", self.addr)
                 self.streaming = False
-                self.completed = True
                 break
-            data = self.vs.read_frame()
             try:
-                util.send(data)
+                self.data_sock.sendall(data)
             except Exception as e:
                 print('Client closed...')
                 self.streaming = False
+                self.completed = True
                 break
             self.fnbr += 1
             print(f'Sent frame {self.fnbr}', end='\r')
@@ -118,4 +122,8 @@ class ClientHandler(threading.Thread):
         self.data_sock = sock
 
 if __name__ == "__main__":
-    vs = VideoServer()
+    parser = argparse.ArgumentParser('Video streaming client')
+    parser.add_argument('--ip', type=str, default="", help='IP address of server')
+    parser.add_argument('--port', type=int, default=8000, help='port number of server')
+    args = parser.parse_args()
+    vs = VideoServer(addr=(args.ip, args.port))

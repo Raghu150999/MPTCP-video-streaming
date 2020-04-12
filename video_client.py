@@ -6,11 +6,22 @@ import threading
 import zlib
 import numpy as np 
 import struct
+import subprocess as sp
+import os
+import argparse
+
+# Helper functions
+def get_fileformat(filename):
+    for i, ch in enumerate(filename[::-1]):
+        if ch == '.':
+            return filename[i+1:]
 
 class VideoClient:
 
-    def __init__(self, saddr=("127.0.0.1", 8000), caddr=("127.0.0.1", 10000), filename="test2.mp4"):
+    def __init__(self, saddr=("127.0.0.1", 8000), caddr=("", 10000), filename="test2.mp4"):
+        # server address
         self.saddr = saddr
+        # client address
         self.caddr = caddr
 
         # control sock
@@ -29,86 +40,87 @@ class VideoClient:
 
         cutil = Util(self.csock)
 
-        # send filename
-        cutil.send(filename.encode('ascii'))
+        # send filename (requested)
+        self.filename = filename
+        cutil.send(filename)
 
         # send SETUP request
         self.cutil = cutil
-        cutil.send(SETUP.encode('ascii'))
-
-        # TODO: get video details
-        self.out_dim = (640, 480)
+        cutil.send(SETUP)
 
         # PLAY stream
-        cutil.send(PP.encode('ascii'))
+        cutil.send(PLAY)
         self.playing = True
         self.player = threading.Thread(target=self.play, args=())
         self.player.start()
+
         while self.running:
             try:
-                cutil.send(HEARTBEAT.encode('ascii'))
+                # send HEARTBEAT to server to maintain connection
+                cutil.send(HEARTBEAT)
                 l = self.csock.recv(4)
-                l = struct.unpack('!I', l)
+                l, = struct.unpack('!I', l)
                 msg = self.csock.recv(l).decode('ascii')
                 if msg == EXIT:
                     self.running = False
                     self.playing = False
                     break
-            except Exception as e:
+            except socket.timeout as e:
+                # No commands received (if timeout)
                 continue
+        self.quit()
         self.csock.close()
     
     def play(self):
-        dutil = Util(self.dsock)
+        # TODO: handle differnt file formats
+        # start ffmpeg decoder
+        cmd = ['ffplay', '-i', 'pipe:', '-f', 'mp4']
+        # remove output of ffmpeg for clean interface
+        devnull = open(os.devnull, 'w')
+        proc = sp.Popen(cmd, stdin=sp.PIPE, stderr=devnull)
+
         # TODO: if connection lost keep max_timeout in util and raise exception if reached
         while self.playing:
             try:
-                data = dutil.recv()
+                data = self.dsock.recv(CHUNK)
             except:
                 print('Server closed...')
                 self.running = False
                 break
-            frame = self.extract_frame(data)
-            cv.imshow("video", frame)
-            key = cv.waitKey(1)
-            # QUIT
-            if key == ord('q'):
-                self.quit()
+            if not data:
+                print('Stream finished...Press Q to quit')
+                self.running = False
                 break
-            # PLAY/PAUSE
-            elif key == ord('p'):
-                self.pp()
-                while True:
-                    key = cv.waitKey(0)
-                    if key == ord('q'):
-                        self.quit()
-                        break
-                    elif key == ord('p'):
-                        self.pp()
-                        break
+            # data = zlib.decompress(data)
+            try:
+                proc.stdin.write(data)
+            except:
+                # client closed stream
+                self.running = False
+                self.playing = False
+                print('Exited...')
+                break
         self.dsock.close()
-        cv.destroyAllWindows()
-                    
-    def pp(self):
-        # perform play/pause action
-        self.cutil.send(PP.encode('ascii'))
+        try:
+            proc.stdin.close()
+            proc.wait()
+        except:
+            pass
 
     def quit(self):
-        self.cutil.send(EXIT.encode('ascii'))
+        self.cutil.send(EXIT)
         self.playing = False
         self.running = False
 
-    def extract_frame(self, databytes):
-        '''
-        Get frame from bytes
-        '''
-        frame = zlib.decompress(databytes)
-        frame = np.array(list(frame), dtype=np.uint8).reshape((self.out_dim[1], self.out_dim[0], 3))
-        return frame
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser('Video streaming client')
+    parser.add_argument('--filename', type=str, default='test.mp4', help='video filename to stream')
+    parser.add_argument('--ip', type=str, default="", help='IP address of server')
+    parser.add_argument('--port', type=int, default=8000, help='port number of server')
+    args = parser.parse_args()
     print('Controls:')
     print('p: PAUSE/PLAY')
     print('q: QUIT')
-    vc = VideoClient()
-    # TODO: improve frame rate, use CHUNK encoding (?)
+    # TODO: handle invalid filename
+    vc = VideoClient(saddr=(args.ip, args.port), caddr=("", 10000), filename=f'public/{args.filename}')
+    
