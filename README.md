@@ -7,3 +7,6 @@ Video Streaming implementation using MPTCP
 ## Usage
 1. Start `http_server.py`.
 2. Use "firefox" browser, and go to listening address
+
+## Comments
+1. Use mininet/netem for emulation
