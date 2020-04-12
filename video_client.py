@@ -1,6 +1,5 @@
 import socket
 from util import Util
-import cv2 as cv 
 from constants import *
 import threading
 import zlib
