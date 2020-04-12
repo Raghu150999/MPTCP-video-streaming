@@ -18,7 +18,7 @@ def get_fileformat(filename):
 
 class VideoClient:
 
-    def __init__(self, saddr=("127.0.0.1", 8000), caddr=("", 10000), filename="test2.mp4"):
+    def __init__(self, saddr, caddr, filename):
         # server address
         self.saddr = saddr
         # client address
