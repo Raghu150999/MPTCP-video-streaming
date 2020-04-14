@@ -8,6 +8,7 @@ import struct
 import subprocess as sp
 import os
 import argparse
+import time
 
 # Helper functions
 def get_fileformat(filename):
@@ -28,7 +29,7 @@ class VideoClient:
         self.csock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.csock.bind(caddr)
         self.csock.connect(saddr)
-        self.csock.settimeout(0.1)
+        self.csock.settimeout(1)
         self.running = True
 
         # data sock
@@ -54,6 +55,7 @@ class VideoClient:
         self.player.start()
 
         while self.running:
+            time.sleep(5)
             try:
                 # send HEARTBEAT to server to maintain connection
                 cutil.send(HEARTBEAT)
@@ -67,6 +69,7 @@ class VideoClient:
             except socket.timeout as e:
                 # No commands received (if timeout)
                 continue
+            
         self.quit()
         self.csock.close()
     

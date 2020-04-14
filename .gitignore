@@ -4,3 +4,4 @@ mpy.py
 test.*
 .vscode
 __pycache__
+*.pcapng
